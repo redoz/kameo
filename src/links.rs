@@ -94,6 +94,20 @@ impl Links {
 
         join_all(mailboxes.iter().map(|m| m.closed())).await;
     }
+
+    /// Drops the restart specs of children that have all closed.
+    ///
+    /// A spec owns its child's args factory, which commonly captures a [`WeakActorRef`] to this
+    /// actor, and a `WeakActorRef` holds these links: until the specs go, that cycle keeps the
+    /// links and everything the factories captured alive after this actor has stopped. A
+    /// restarted incarnation starts with no children of its own, so nothing needs them.
+    ///
+    /// [`WeakActorRef`]: crate::actor::WeakActorRef
+    pub(crate) async fn release_children(&self) {
+        let children = mem::take(&mut self.lock().await.children);
+        // Dropped outside the lock: a factory's captures may run arbitrary drop code.
+        drop(children);
+    }
 }
 
 #[derive(Default)]
