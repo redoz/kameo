@@ -362,6 +362,8 @@ where
             // user-provided destructors unable to re-enter the parent Links mutex while held.
             drop(terminal_child_spec);
 
+            #[cfg(not(feature = "tracing"))]
+            let _ = no_restart_reason;
             #[cfg(feature = "tracing")]
             match no_restart_reason {
                 crate::links::NoRestartReason::NormalExitUnderTransientPolicy => {
