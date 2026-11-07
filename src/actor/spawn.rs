@@ -259,6 +259,7 @@ where
                 actor_ref.links.send_children_shutdown().await;
                 let is_restarting = actor_ref.links.lock().await.will_restart(&reason);
                 drain_until_children_closed(&actor_ref.links, &mut mailbox_rx, is_restarting).await;
+                actor_ref.links.release_children().await;
 
                 // On a terminal stop (not a restart, where the mailbox is reused by the next
                 // incarnation) hand any leftover tells to `on_undelivered` before `notify_links`
@@ -340,6 +341,7 @@ where
                 // startup failed; the supervisor may still restart us per policy
                 let is_restarting = actor_ref.links.lock().await.will_restart(&reason);
                 drain_until_children_closed(&actor_ref.links, &mut mailbox_rx, is_restarting).await;
+                actor_ref.links.release_children().await;
 
                 #[cfg(feature = "console")]
                 monitor.set_stopped(&reason);
