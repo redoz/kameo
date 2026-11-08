@@ -78,7 +78,7 @@
 use std::{
     any::Any,
     sync::{
-        Arc,
+        Arc, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -686,11 +686,15 @@ fn new_factory<C: Actor>(
     args_factory: SupervisorFactory<C::Args>,
     in_thread: bool,
 ) -> SpawnFactory {
+    // The logical actor's ref, which every incarnation runs on. The spec holds it for as long
+    // as the child is supervised, so a handle taken before a restart keeps naming the child.
+    let logical: Arc<OnceLock<ActorRef<C>>> = Arc::default();
     Box::new(move |rx: Box<dyn Any + Send>| {
         let mailbox_rx = *rx.downcast::<MailboxReceiver<C>>().unwrap();
         let mailbox_tx = mailbox_tx.clone();
         let links = links.clone();
         let args = args_factory.get();
+        let logical = logical.clone();
 
         Box::pin(async move {
             {
@@ -703,7 +707,15 @@ fn new_factory<C: Actor>(
                 // left by a previous supervisor shutdown.
                 inner.parent_shutdown.store(false, Ordering::Release);
             }
-            let prepared = PreparedActor::new_with(actor_id, (mailbox_tx, mailbox_rx), links);
+            let prepared = match logical.get() {
+                Some(actor_ref) => PreparedActor::next_incarnation(actor_ref.clone(), mailbox_rx),
+                None => {
+                    let prepared =
+                        PreparedActor::new_with(actor_id, (mailbox_tx, mailbox_rx), links);
+                    let _ = logical.set(prepared.actor_ref().clone());
+                    prepared
+                }
+            };
             let actor_ref = prepared.actor_ref().clone();
             if in_thread {
                 prepared.spawn_in_thread(args);
